@@ -14,48 +14,87 @@
             margin: 0;
             padding: 20px;
             background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
         }
-        h1 { color: #333; }
+        h1 { color: #333; margin-bottom: 5px; }
+        .stage-box {
+            width: 100%;
+            max-width: 400px;
+            padding: 20px;
+            margin-top: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
         .data-display {
-            margin: 15px 0;
-            padding: 10px;
-            border: 1px solid #ccc;
             background-color: #fff;
             text-align: left;
         }
         .data-display strong { display: inline-block; width: 100px; }
+        
+        /* 許可エリア (最初のステップ) */
         #permission-area {
-            margin-top: 30px;
-            padding: 20px;
             background-color: #ffe0b2;
-            border-radius: 8px;
         }
         #permission-btn {
-            padding: 10px 20px;
+            padding: 12px 25px;
             font-size: 16px;
             background-color: #ff9800;
             color: white;
             border: none;
-            border-radius: 5px;
+            border-radius: 6px;
             cursor: pointer;
+            box-shadow: 0 3px #c47600;
         }
-        .status-ok { color: green; }
-        .status-ng { color: red; }
+        
+        /* モード選択エリア (次のステップ) */
+        #mode-select-area {
+            background-color: #e0f7fa;
+        }
+        .mode-select-btn {
+            padding: 12px 25px;
+            margin: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            background-color: #2196F3;
+            color: white;
+            box-shadow: 0 4px #0d47a1;
+        }
+        
+        .status-ok { color: green; font-weight: bold; }
+        .status-ng { color: red; font-weight: bold; }
     </style>
 </head>
 <body>
-    <h1>スマホコントローラー</h1>
-    <div id="permission-area">
-        <p>iOS 13以降のデバイスでは、センサー利用の許可が必要です。</p>
+    <h1>ゲキトツ！レーシング</h1>
+    <p>コントローラーデバイスID: <span id="myid">接続中...</span></p>
+
+    <!-- 1. センサー許可エリア -->
+    <div id="permission-area" class="stage-box">
+        <h2>ステップ 1: センサー許可</h2>
+        <p>iOS 13以降のデバイスでは、傾きと加速度の利用許可が必要です。</p>
         <button id="permission-btn" onclick="requestPermission()">センサーを有効にする</button>
     </div>
+    
+    <!-- 2. モード選択エリア -->
+    <div id="mode-select-area" class="stage-box" style="display:none;">
+        <h2>ステップ 2: プレイモードを選択</h2>
+        <p>PC画面で表示されているモードを選択してください。</p>
+        <button class="mode-select-btn" data-mode="single">🚗 シングルプレイ</button>
+        <button class="mode-select-btn" data-mode="multi">💥 対戦レース</button>
+    </div>
 
-    <div class="data-display">
-        <p>現在のID: <span id="myid">接続中...</span></p>
+    <!-- 3. プレイ中のデータ表示エリア -->
+    <div id="data-area" class="stage-box data-display" style="display:none;">
+        <h2>操作中</h2>
         <p>接続状態: <span id="status">切断</span></p>
         <p><strong>傾き β (左右)</strong>: <span id="beta-data">0</span> °</p>
         <p><strong>傾き γ (前後)</strong>: <span id="gamma-data">0</span> °</p>
-        <p><strong>加速度 Z</strong>: <span id="accelz-data">0</span></p>
+        <p><strong>加速度 Z</strong>: <span id="accelz-data">0</span> (ゲキトツ力)</p>
     </div>
 
     <script>
@@ -63,9 +102,9 @@
         let socket;
         let myid;
         const ROOM_NAME = "game";
-        const UPDATE_INTERVAL = 100; // 100msごとにデータを送信 (1秒間に10回)
-        const ACCEL_THRESHOLD = 15; // ゲキトツ力チャージと判定する加速度Zの閾値（サーバーと合わせる）
+        const UPDATE_INTERVAL = 50; // 50msごとにデータを送信 (1秒間に20回)
         
+        let currentMode = null; // 選択されたプレイモード
         let currentBeta = 0;
         let currentGamma = 0;
         let currentAccelZ = 0;
@@ -75,69 +114,78 @@
             // クライアントIDの取得と設定
             myid = sessionStorage.getItem('clientId');
             if (!myid) {
-                // IDがなければランダムに生成 [cite: 652-655]
                 myid = Math.random().toString(36).substring(2, 15);
                 sessionStorage.setItem('clientId', myid);
             }
             document.getElementById("myid").innerText = myid;
 
             // Socket.io接続
-            // サーバー側でクライアントIDを識別できるようにクエリパラメータとして渡す
-            socket = io.connect({
-                query: { clientId: myid }
-            });
+            socket = io.connect({ query: { clientId: myid } });
 
             socket.on('connect', () => {
                 document.getElementById('status').innerHTML = '<span class="status-ok">接続済み</span>';
-                // 接続後、ROOMに参加 [cite: 658-661]
-                socket.emit("join", ROOM_NAME); 
             });
 
             socket.on('disconnect', () => {
                 document.getElementById('status').innerHTML = '<span class="status-ng">切断</span>';
             });
+            
+            // モード選択ボタンのイベントリスナーを設定
+            document.querySelectorAll('#mode-select-area .mode-select-btn').forEach(button => {
+                button.onclick = (e) => {
+                    currentMode = e.target.dataset.mode;
+                    if (socket && socket.connected) {
+                        // サーバーへROOM名と選択モードを送信 ('join_game'イベント)
+                        socket.emit("join_game", { room: ROOM_NAME, mode: currentMode });
+                        
+                        // UIをプレイモードに切り替え
+                        document.getElementById('mode-select-area').style.display = 'none';
+                        document.getElementById('data-area').style.display = 'block';
+                        
+                        // センサーイベントリスナーの設定
+                        window.addEventListener('deviceorientation', handleOrientation, true);
+                        window.addEventListener('devicemotion', handleMotion, true);
 
-            // センサーイベントリスナーの設定
-            window.addEventListener('deviceorientation', handleOrientation, true);
-            window.addEventListener('devicemotion', handleMotion, true);
-
-            // 定期的なデータ送信
-            setInterval(sendSensorData, UPDATE_INTERVAL);
+                        // 定期的なデータ送信を開始
+                        setInterval(sendSensorData, UPDATE_INTERVAL);
+                        
+                    } else {
+                        alert('サーバーと未接続です。PC側が起動しているか確認してください。');
+                    }
+                };
+            });
+            
+            // 許可完了後、モード選択画面を表示
+            document.getElementById('permission-area').style.display = 'none';
+            document.getElementById('mode-select-area').style.display = 'block';
         }
 
         // --- センサー処理 (deviceorientation: 傾き) ---
         function handleOrientation(event) {
-            // beta (X軸周り): 左右の傾き（レースの左右移動に使用）
             currentBeta = event.beta; 
-            // gamma (Y軸周り): 前後の傾き（ここでは使用しないがデータを取得）
             currentGamma = event.gamma; 
             
-            // UI更新
             document.getElementById('beta-data').innerText = currentBeta.toFixed(2);
             document.getElementById('gamma-data').innerText = currentGamma.toFixed(2);
         }
 
         // --- センサー処理 (devicemotion: 加速度) ---
         function handleMotion(event) {
-            // 端末のZ軸方向の加速度（上下の振り）
+            // Z軸方向の加速度（上下の振り）
             currentAccelZ = event.acceleration.z || 0; 
 
-            // UI更新
             document.getElementById('accelz-data').innerText = currentAccelZ.toFixed(2);
         }
 
         // --- データ送信 ---
         function sendSensorData() {
-            if (socket && socket.connected) {
+            if (socket && socket.connected && currentMode) {
                 const data = {
                     id: myid,
                     room: ROOM_NAME,
-                    // 傾きデータを送信
                     b: currentBeta.toFixed(2),  // 左右移動用
-                    g: currentGamma.toFixed(2), // (予備)
-
-                    // 加速度Z軸データ（チャージ判定用）を送信
-                    // サーバーでこの値が閾値を超えたか判定し、ゲキトツ力をチャージします。
+                    g: currentGamma.toFixed(2), // 前後用
+                    // ゲキトツ力チャージ判定用に加速度Z軸の絶対値を送信
                     accelerationZ: Math.abs(currentAccelZ).toFixed(2)
                 };
                 
@@ -148,30 +196,25 @@
 
         // --- iOS 13+ センサー許可関数 ---
         function requestPermission() {
-            // DeviceOrientationEventの許可要求
-            if (
-                typeof DeviceOrientationEvent.requestPermission === 'function'
-            ) {
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                 DeviceOrientationEvent.requestPermission()
                     .then(permissionState => {
                         if (permissionState === 'granted') {
-                            // 許可された場合
                             document.getElementById('permission-area').innerHTML = '<p class="status-ok">センサー利用が許可されました。</p>';
-                            initController();
+                            initController(); // 許可後、モード選択に進む
                         } else {
-                            // 拒否された場合
                             document.getElementById('permission-area').innerHTML = '<p class="status-ng">センサー利用が拒否されました。</p>';
                         }
                     })
-                    .catch(console.error);
+                    .catch(e => {
+                        document.getElementById('permission-area').innerHTML = `<p class="status-ng">エラーが発生しました: ${e.message}</p>`;
+                    });
             } else {
-                // iOS 13未満、またはAndroidなど許可が不要な場合
-                document.getElementById('permission-area').style.display = 'none';
-                initController();
+                // 許可が不要な環境 (Android, PCなど)
+                document.getElementById('permission-area').innerHTML = '<p class="status-ok">センサー許可は不要です。</p>';
+                initController(); // そのままモード選択に進む
             }
         }
-        
-        // ページロード時に、許可関数を実行可能にするためのボタンを準備
     </script>
 </body>
 </html>
