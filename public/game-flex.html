@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>センサからの信号受信</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.1.9/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.1/socket.io.js"></script>
+  </head>
+
+  <body>
+    <h1>スマホからのセンサ情報を受信</h1>
+    <div>
+      <div>あなたのID: <span id="myid"></span></div>
+      <button id="connect">ルームに入る</button>
+      <div>受信した情報はコンソールログで確認してください</div>
+    </div>
+    <script>
+      let socket = io.connect();
+
+      let btn = document.querySelector("#connect");
+      let b = 0;
+      let g = 0;
+
+      let myid = sessionStorage.getItem('clientId');
+      if (!myid) {
+        myid = Math.random().toString(36).substring(2, 15);
+        sessionStorage.setItem('clientId', myid);
+      }
+      
+      document.querySelector("#myid").innerHTML = myid;
+      console.log("あなたのID: ", myid);
+
+      btn.addEventListener("click", function () {
+        socket.emit("join", "game");
+        btn.remove();
+      });
+
+      socket.on("sensor", function (data) {
+        g = parseFloat(data.g);
+        b = parseFloat(data.b);
+      });
+
+      let x = 0;
+      let y = 0;
+      let rotY = 0;
+
+      let w = 2;
+      let h = 30;
+      let d = 5;
+
+      function setup() {
+        createCanvas(800, 800, WEBGL);
+        camera(0, 800, 100, 0, 0, 0, 0, 1, 0);
+        noStroke();
+      }
+
+      function draw() {
+        background(0);
+        orbitControl();
+        ambientLight(50, 50, 50);
+        directionalLight(100, 20, 20, -1, -1, -1);
+        pointLight(20, 20, 100, 0, 0, 800);
+
+        push();
+        // 板の回転
+        rotateX((-PI * b) / 180);
+        rotateY((PI * g) / 180);
+        translate(0, 0, -50);
+        box(800, 800, 30);
+
+        // 草の回転　最大値(0.1)まで少しずつ反映する
+        rotY += (0.01 * PI * g) / 180;
+        if (rotY > 0.1) rotY = 0.1;
+        if (rotY < -0.1) rotY = -0.1;
+
+        // 草が生える場所（100箇所）
+        for (let j = 0; j < 10; j++) {
+          for (let i = 0; i < 10; i++) {
+            push();
+            translate(-200 + 40 * i, -200 + 40 * j, 0);
+            arm();
+            pop();
+          }
+        }
+
+        pop();
+      }
+
+      // 一本の草
+      function arm() {
+        for (i = 0; i < 10; i++) {
+          rotateY(rotY);
+          fill(100, 250, 100);
+          box(w, d, h);
+          let x = (h / 2) * sin(rotY);
+          let z = (h / 2) * cos(rotY);
+          translate(x, 0, 2 * z);
+        }
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>3D Balls</title>
+
+    <!-- 1. ここにP5.jsを読み込む -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.1.9/p5.min.js"></script>
+
+    <!-- 2.以下にsetup関数とdraw関数を定義 -->
+    <script>
+      function setup() {
+        createCanvas(800, 800, WEBGL);
+        camera(0, 800, 100, 0, 0, 0, 0, 1, 0);
+        noStroke();
+      }
+
+      let x = 0;
+      let r = 40;
+
+      function draw() {
+        background(0);
+        orbitControl();
+        ambientLight(50, 50, 50);
+        //directionalLight(100, 20, 20, -1, -1, -1);
+        pointLight(20, 20, 100, 0, 0, 800);
+
+        push();
+        translate(0, 0, -50);
+        box(800, 800, 30);
+        pop();
+
+        push();
+        specularMaterial(250);
+        translate(x, 0, 0);
+        sphere(r);
+        x += 2;
+        if (x > width / 2 + r) x = -width / 2 - r;
+        pop();
+      }
+    </script>
+  </head>
+  <body></body>
+</html>
