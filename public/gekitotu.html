@@ -4,9 +4,11 @@
     <meta charset="UTF-8">
     <title>ゲキトツ！レーシング (PC画面)</title>
     
+    <!-- p5.js ライブラリの読み込み -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.sound.min.js"></script>
     
+    <!-- Socket.io クライアントライブラリの読み込み -->
     <script src="/socket.io/socket.io.js"></script>
     
     <style>
@@ -22,21 +24,69 @@
             padding: 10px;
             border-radius: 5px;
             width: 280px;
+            max-height: 95vh; /* 縦長画面対応 */
+            overflow-y: auto;
         }
         .status-item { margin-bottom: 5px; }
-        .player-info { border-bottom: 1px solid #333; padding-bottom: 5px; margin-bottom: 5px; }
+        .player-info { 
+            border-bottom: 1px solid #333; 
+            padding-bottom: 5px; 
+            margin-bottom: 5px; 
+            /* ゴール済みのプレイヤーは色を変える */
+            transition: all 0.3s;
+        }
+        .finished { background-color: rgba(0, 255, 0, 0.1); }
+        
+        /* スタート画面の調整 */
+        #start-screen {
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            background: rgba(0, 0, 0, 0.9); 
+            z-index: 20; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            color: white;
+            transition: opacity 0.5s;
+        }
+        .mode-select-btn {
+            padding: 12px 25px;
+            margin: 10px;
+            font-size: 18px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            background-color: #4CAF50;
+            color: white;
+            box-shadow: 0 4px #2e8b57;
+            transition: background-color 0.2s;
+        }
+        .mode-select-btn:hover {
+            background-color: #388e3c;
+        }
     </style>
 </head>
 <body>
     <div id="ui-overlay">
         <h2>ゲキトツ！レーシング</h2>
         <p class="status-item">接続ID: <span id="clientIdDisplay">未接続</span></p>
-        <p><button id="joinButton">ルーム「GAME」に入る</button></p>
         <hr>
-        <h3>プレイヤー状況 (リアルタイム)</h3>
-        <div id="player-list">
-            <p>データを待機中...</p>
+        <!-- プレイヤーリストの表示エリア -->
+        <div id="game-status">
+             <div id="player-list">データを待機中...</div>
         </div>
+    </div>
+    
+    <!-- スタート画面 -->
+    <div id="start-screen">
+        <h1>GEKITOTSU! RACING</h1>
+        <p>スマートフォンをコントローラーとして使用し、モードを選択してください。</p>
+        <button class="mode-select-btn" data-mode="single">🚗 一人プレイ (障害物のみ)</button>
+        <button class="mode-select-btn" data-mode="multi">💥 対戦レース (複数ユーザー)</button>
     </div>
     
     <script>
@@ -44,12 +94,18 @@
         let socket;
         let gameData = {
             players: {},
-            obstacles: []
+            obstacles: [],
+            maxLap: 2
         };
         let currentClientId = "Unknown"; // 自身のID
+        let gameStarted = false;         // ゲームが開始されているか
         
+        // サーバー側の定数を参照
+        const TRACK_WIDTH_X = 250;
+        const COURSE_LENGTH_Z = 1000;
+
+        // p5.jsの初期化時に呼ばれる
         function setupSocket() {
-            // サーバーに接続。ユーザーIDをクエリとして送信することも可能だが、ここではサーバーに任せる
             socket = io.connect(); 
 
             socket.on('connect', () => {
@@ -64,53 +120,70 @@
                 updateUI(); // UIを更新
             });
 
-            // 他のユーザーが参加したことを通知されたとき
             socket.on('user joined', (newPlayer) => {
                 console.log(newPlayer.id + 'が参加しました。');
             });
             
-            // 他のユーザーが切断したことを通知されたとき
             socket.on('user left', (clientId) => {
                 console.log(clientId + 'が切断しました。');
                 delete gameData.players[clientId];
             });
         }
         
-        document.getElementById('joinButton').onclick = () => {
-            if (socket) {
-                // 'game'というルームに参加するようサーバーに要求
-                socket.emit("join", "game");
-                document.getElementById('joinButton').innerText = "ROOM: GAME 接続済み";
-                document.getElementById('joinButton').disabled = true;
-            }
-        };
+        // モード選択ボタンのイベントリスナーを設定
+        document.querySelectorAll('.mode-select-btn').forEach(button => {
+            button.onclick = (e) => {
+                const mode = e.target.dataset.mode;
+                if (socket && socket.connected) {
+                    // サーバーへROOMと選択モードを送信 (join_gameイベントを使用)
+                    socket.emit("join_game", { room: "game", mode: mode });
+                    
+                    // スタート画面を非表示にし、ゲーム開始フラグを立てる
+                    document.getElementById('start-screen').style.opacity = '0';
+                    setTimeout(() => {
+                        document.getElementById('start-screen').style.display = 'none';
+                        gameStarted = true;
+                    }, 500);
+                    
+                } else {
+                    alert('Socketに接続されていません。コントローラー（スマートフォン）とPCが接続されていることを確認してください。');
+                }
+            };
+        });
 
         // --- p5.js 3D描画設定 ---
         
-        // p5.jsの初期化
         function setup() {
             createCanvas(windowWidth, windowHeight, WEBGL);
             angleMode(DEGREES);
             setupSocket();
         }
 
-        // メイン描画ループ
         function draw() {
+            // ゲーム開始前は描画しない
+            if (!gameStarted) {
+                background(0);
+                return;
+            }
+
+            // --- 環境光の強化 (明るさ調整) ---
             background(50, 50, 80); // 背景色（夜空のような青）
-            
+            ambientLight(150); // 全体を明るくする基本光 (非常に重要)
+            pointLight(255, 255, 255, 0, -200, 0); // 中央上部からの白熱灯
+            directionalLight(200, 200, 200, 0.5, -1, 0.5); // 斜めからの光
+
             // カメラ設定
-            // プレイヤーの視点に追従させる場合は、ここでカメラ位置を調整
             let myPlayer = gameData.players[currentClientId];
             
             if (myPlayer) {
-                // プレイヤーの少し後ろから見下ろす視点にカメラを固定（一人称/三人称視点）
+                // プレイヤーの少し後ろから見下ろす視点にカメラを固定（三人称視点）
                 camera(
-                    myPlayer.x, // プレイヤーX座標
-                    -200, // プレイヤーY座標 (空から見下ろす)
-                    myPlayer.z + 200, // プレイヤーZ座標 (少し後ろ)
-                    myPlayer.x, // ターゲットX (プレイヤーを見る)
-                    0, // ターゲットY
-                    myPlayer.z, // ターゲットZ
+                    myPlayer.x,             // プレイヤーX座標
+                    -200,                   // プレイヤーY座標 (空から見下ろす高さ)
+                    myPlayer.z + 200,       // プレイヤーZ座標 (少し後ろ)
+                    myPlayer.x,             // ターゲットX (プレイヤーを見る)
+                    0,                      // ターゲットY
+                    myPlayer.z,             // ターゲットZ
                     0, 1, 0
                 );
             } else {
@@ -118,26 +191,45 @@
                  camera(0, -300, 300, 0, 0, 0, 0, 1, 0);
             }
             
-            // 光源設定
-            ambientLight(60);
-            pointLight(255, 255, 255, 0, -200, 0);
-            
             // --- コースの描画 ---
             push();
             fill(0, 150, 0); // コースの色
-            plane(1000, 2000); // 広い平面をコースと見立てる (X:左右, Z:前後)
+            
+            // コースの平面を描画 (幅: TRACK_WIDTH_X * 2, 長さ: COURSE_LENGTH_Z * 2 * MAX_LAP)
+            // プレイヤーのZ座標に合わせてコースをスクロールさせる
+            let courseDepth = COURSE_LENGTH_Z * gameData.maxLap * 2;
+            translate(0, 0, myPlayer ? myPlayer.z + courseDepth / 2 : 0);
+            plane(TRACK_WIDTH_X * 2, courseDepth + 100); 
             pop();
+            
+            // --- Z=0 のスタート/ラップラインを描画 ---
+            push();
+            stroke(255);
+            strokeWeight(5);
+            line(-TRACK_WIDTH_X, 1, 0, TRACK_WIDTH_X, 1, 0);
+            noStroke();
+            pop();
+
 
             // --- プレイヤーの描画 ---
             for (const id in gameData.players) {
                 const player = gameData.players[id];
+                
+                // シングルプレイモードで、自分以外のプレイヤーは描画しない（お化けゴーストは除く）
+                if (gameData.players[currentClientId] && 
+                    gameData.players[currentClientId].mode === 'single' && 
+                    id !== currentClientId) {
+                    continue;
+                }
+
                 push();
                 
                 // プレイヤーの位置へ移動
                 translate(player.x, 0, player.z); 
 
                 // ゲキトツ力に応じて色を変える
-                let colorIntensity = map(player.gekitotsuForce, 0, 10, 100, 255);
+                let colorIntensity = map(player.gekitotsuForce, 0, gameData.maxGekitotsuForce || 10, 100, 255, true);
+                
                 if (id === currentClientId) {
                     // 自分の車は明るい赤
                     ambientMaterial(255, colorIntensity, colorIntensity); 
@@ -153,28 +245,31 @@
                 fill(255);
                 textSize(12);
                 textAlign(CENTER);
-                text(id, 0, -20, 0); 
+                text(id, 0, -25, 0); 
                 
                 pop();
             }
 
             // --- 障害物の描画 ---
             gameData.obstacles.forEach(obs => {
+                // 衝突して一時的に無効化されている障害物は描画しない
+                if (obs.collided) return; 
+
                 push();
+                // 障害物の描画位置はZ座標の範囲に注意
                 translate(obs.x, 0, obs.z);
                 
                 if (obs.type === 'box') {
                     ambientMaterial(200, 100, 0); // 箱は茶色
-                    box(obs.width, obs.height, obs.depth);
+                    box(obs.size, obs.size, obs.size);
                 } else if (obs.type === 'bonus') {
                     ambientMaterial(255, 255, 0); // ボーナスは黄色
-                    sphere(15);
+                    sphere(obs.size); // ボーナスのサイズを適用
                 }
                 pop();
             });
         }
         
-        // ブラウザウィンドウサイズが変わったときにキャンバスもリサイズ
         function windowResized() {
             resizeCanvas(windowWidth, windowHeight);
         }
@@ -182,28 +277,49 @@
         // --- UI更新関数 ---
         function updateUI() {
             const playerListDiv = document.getElementById('player-list');
-            playerListDiv.innerHTML = ''; // リストをクリア
+            playerListDiv.innerHTML = ''; 
 
-            let playersArray = Object.values(gameData.players);
+            let playersArray = Object.values(gameData.players)
+                                    .filter(p => p.mode === gameData.players[currentClientId]?.mode && p.status !== 'lobby');
             
-            // 順位付け (ここではZ座標に基づいて暫定的に順位付け)
-            playersArray.sort((a, b) => a.z - b.z); // Z座標が小さいほど（奥に進んでいるほど）上位
+            // Z座標に基づいて暫定的に順位付け
+            playersArray.sort((a, b) => {
+                if (a.status === 'finished' && b.status !== 'finished') return -1;
+                if (a.status !== 'finished' && b.status === 'finished') return 1;
+                if (a.status === 'finished' && b.status === 'finished') return a.finishTime - b.finishTime; 
+                
+                if (a.lap !== b.lap) return b.lap - a.lap;
+                return a.z - b.z; 
+            });
 
             playersArray.forEach((player, index) => {
                 const isMe = player.id === currentClientId;
                 const element = document.createElement('div');
-                element.className = 'player-info';
+                element.className = 'player-info' + (player.status === 'finished' ? ' finished' : '');
                 
+                let rankDisplay = `#${index + 1}`;
+                if (player.status === 'finished') {
+                    rankDisplay = `🏁 ${index + 1}位 (T:${((player.finishTime - player.startTime) / 1000).toFixed(1)}s)`;
+                }
+
                 element.innerHTML = `
-                    <p style="color: ${isMe ? '#0f0' : '#fff'};">
-                        #${index + 1} ${isMe ? '【自分】' : ''} ${player.id}
+                    <p style="color: ${isMe ? '#00e600' : '#fff'}; font-weight: bold;">
+                        ${rankDisplay} ${isMe ? '【自分】' : ''} ${player.id}
                     </p>
                     <p>ポイント: ${player.points} / ゲキトツ力: ${player.gekitotsuForce.toFixed(0)}</p>
-                    <p>速度: ${player.speed.toFixed(1)} / ラップ: ${player.lap}</p>
+                    <p>速度: ${player.speed.toFixed(1)} / ラップ: ${player.lap} / ${gameData.maxLap}</p>
                 `;
                 playerListDiv.appendChild(element);
             });
         }
+        
+        // --- 独自のロジックとして、startTimeを管理するために接続時に設定 ---
+        // サーバー側でfinishTimeが設定されたため、startTimeも必要
+        socket.on('join_game', (data) => {
+             // ゲーム開始時にスタート時刻を記録
+            gameData.players[currentClientId].startTime = Date.now();
+        });
+
     </script>
 </body>
 </html>
