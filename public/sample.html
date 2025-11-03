@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>マルチプレイヤーレースゲーム</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.1.9/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.1.3/socket.io.js"></script>
+    
+    <style>
+       /* 描画エリアを中央に */
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        font-family: sans-serif;
+      }
+      /* p5.js のキャンバスを配置する div */
+      #canvas-container {
+        border: 2px solid #333;
+        margin-top: 10px;
+        position: relative; /* アイテム表示用 */
+      }
+    </style>
+</head>
+<body>
+    <h1>マルチプレイヤーレースゲーム</h1>
+    <div>
+      <div>あなたのID: <span id="myid"></span></div>
+      <button id="connect">レースルームに入る</button>
+      <div id="status">ルームに参加してレースを開始しましょう！</div>
+      <ul id="ranking"></ul>
+    </div>
+    
+    <div id="canvas-container"></div>
+    
+    <script>
+    // レースゲーム定義
+        const GAME_ROOM = 'race_game';
+        const RACE_FINISH_LINE = 100;
+        const TRACK_LANES = 3;
+
+        let socket = io.connect();
+        let players = {};
+        let items = {};
+        let trackWidth = 700;
+        let trackHeight = 300;
+        let rankingList = document.querySelector("#ranking");
+
+        // ID生成と表示
+        let btn = document.querySelector("#connect");
+        let myid = sessionStorage.getItem('clientId');
+        if (!myid) {
+            myid = Math.random().toString(36).substring(2, 15);
+            sessionStorage.setItem('clientId', myid);
+        }
+        document.querySelector("#myid").innerHTML = myid;
+        console.log("あなたのID: ", myid);
+
+        // イベントリスナーの変更（ルーム参加）
+        btn.addEventListener("click", function () {
+        // 元の "game" から "race_game" ルームへ変更
+            socket.emit("join", GAME_ROOM); 
+            document.querySelector("#status").textContent = "レースに参加しました。他のプレイヤーを待っています...";
+            btn.remove();
+        });
+
+        // socket.IOイベントハンドラ（ゲームロジック）
+        // 初回プレイヤー情報受信
+        socket.on('current players', (initialPlayers) => {
+            players = initialPlayers;
+        });
+
+        // 初回アイテム情報受信
+        socket.on('initial items', (initialItems) => {
+            items = initialItems;
+        });
+
+        // 定期的なゲーム状態の更新
+        socket.on('game update', (data) => {
+            players = data.players;
+            items = data.items;
+        });
+        
+        // アイテム削除通知
+        socket.on('item removed', (itemId) => {
+            delete items[itemId];
+        });
+
+        // プレイヤー切断通知
+        socket.on('player disconnected', (playerId) => {
+            delete players[playerId];
+        });
+
+        // ゴール通知
+        socket.on('player finished', (result) => {
+            document.querySelector("#status").textContent = `${result.name} がゴールしました！`;
+            const listItem = document.createElement('li');
+            listItem.textContent = `${rankingList.children.length + 1}位: ${result.name} (${result.time})`;
+            rankingList.appendChild(listItem);
+        });
+
+        // P5.jsのキャンバスを特定のコンテナに作成
+        let canvas;
+        function setup() {
+            // 元のキャンバスサイズ (800, 800) の比率を参考に、2Dトラックとして再設定
+            canvas = createCanvas(trackWidth, trackHeight); 
+            canvas.parent('canvas-container'); // キャンバスを div に配置
+            angleMode(DEGREES);
+            rectMode(CORNER);
+        }
+
+        function draw() {
+            background(200);
+            
+            // 1. トラックの描画
+            drawTrack();
+
+            // 2. アイテムの描画
+            drawItems();
+            
+            // 3. プレイヤーの車の描画
+            drawPlayers();
+        }
+
+        function drawTrack() {
+            // コースの背景
+            fill(50);
+            rect(0, 0, trackWidth, trackHeight);
+            
+            // レーンの描画
+            for (let i = 1; i < TRACK_LANES; i++) {
+                stroke(255, 200, 0); // 中央線
+                strokeWeight(3);
+                // レーン間の境界線
+                let laneY = trackHeight * i / TRACK_LANES;
+                line(0, laneY, trackWidth, laneY);
+            }
+
+            // ゴールライン (トラックの右端)
+            stroke(255, 0, 0);
+            strokeWeight(8);
+            line(trackWidth - 10, 0, trackWidth - 10, trackHeight);
+            
+            // スタートライン
+            stroke(255, 255, 255);
+            strokeWeight(4);
+            line(10, 0, 10, trackHeight);
+        }
+        
+        function getLaneYPosition(laneIndex) {
+            // レーンの中心Y座標を計算
+            let laneHeight = trackHeight / TRACK_LANES;
+            return laneIndex * laneHeight + laneHeight / 2;
+        }
+
+        function drawItems() {
+            Object.values(items).forEach(item => {
+                // X座標 (進行度) をピクセルに変換
+                const progressRatio = item.x / RACE_FINISH_LINE;
+                const xPos = map(progressRatio, 0, 1, 10, trackWidth - 20); 
+
+                // Y座標 (レーン) をピクセルに変換
+                const yPos = getLaneYPosition(item.y);
+
+                fill(255, 255, 0); // 黄色 (ブーストアイテム)
+                noStroke();
+                ellipse(xPos, yPos, 20, 20); // アイテムを円で描画
+                
+                fill(0);
+                textAlign(CENTER, CENTER);
+                textSize(12);
+                text("⚡", xPos, yPos);
+            });
+        }
+
+        function drawPlayers() {
+            Object.values(players).forEach(player => {
+                // 1. X座標 (進行度) をピクセルに変換
+                const progressRatio = player.x / RACE_FINISH_LINE;
+                // スタート(10)からゴール手前(trackWidth - 20)にマッピング
+                const xPos = map(progressRatio, 0, 1, 10, trackWidth - 20); 
+
+                // 2. Y座標 (レーン) をピクセルに変換
+                const yPos = getLaneYPosition(player.y);
+
+                // プレイヤーごとの色を決定 (p5.js の hashColor を利用)
+                let carColor = color(getColorFromId(player.id));
+                
+                if (player.finished) {
+                    carColor = color(255, 215, 0); // ゴールド
+                }
+
+                // 車の描画 (長方形)
+                fill(carColor);
+                stroke(255);
+                strokeWeight(1);
+                rect(xPos - 15, yPos - 10, 30, 20, 5); // 角丸の車
+
+                // 名前表示
+                fill(255);
+                textSize(10);
+                textAlign(CENTER);
+                text(player.name + (player.id === myid ? " (YOU)" : ""), xPos, yPos - 15);
+            });
+        }
+        
+        // 元のHTMLにあったIDから色を生成する関数をp5.js対応で再定義
+        function getColorFromId(id) {
+            let hash = 0;
+            for (let i = 0; i < id.length; i++) {
+                hash = id.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const h = abs(hash % 360);
+            // HSL色を返す（p5.jsのcolor()で処理可能）
+            return `hsl(${h}, 60%, 65%)`;
+            }
+    </script>
+  </body>
+</html>
