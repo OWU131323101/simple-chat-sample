@@ -1,105 +1,119 @@
+smart.html基ファイル
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ボーリングゲーム案内</title>
-    <!-- Socket.io のインポート -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.1.3/socket.io.js"></script>
+  <head>
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="-1" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <script type="module">
+      import { io } from "https://cdn.socket.io/4.5.1/socket.io.esm.min.js";
+
+      document.addEventListener("DOMContentLoaded", () => {
+        let devid = sessionStorage.getItem('clientId');
+        if (!devid) {
+          devid = Math.random().toString(36).substring(2, 15);
+          sessionStorage.setItem('clientId', devid);
+        }
+        
+        let decPlaces = 2;
+        let interval = 50; // 20 fps
+        let alpha = 0,
+          beta = 0,
+          gamma = 0;
+        let z = 0;
+
+        const socket = io();
+        
+        // socket.emit("join", "game");
+        
+        document.querySelector("#contents").textContent =
+          "接続されました。あなたのIDは：" + devid;
+        document.querySelector("#content").style.backgroundColor =
+          getColorFromId(devid);
+
+        if (!("WebSocket" in window)) {
+          alert("ブラウザがWebSocketsをサポートしていません");
+        }
+
+        document.querySelector("#connect").addEventListener("click", () => {
+          setInterval(() => {
+            socket.emit("sensor", {
+              id: devid,
+              a: alpha,
+              b: beta,
+              g: gamma,
+              z: z,
+            });
+          }, interval);
+          document.querySelector("#connect").style.display = "none";
+          request_permission();
+        });
+
+        function getColorFromId(id) {
+          let hash = 0;
+          for (let i = 0; i < id.length; i++) {
+            hash = id.charCodeAt(i) + ((hash << 5) - hash);
+          }
+          const h = Math.abs(hash % 360);
+          return `hsl(${h}, 60%, 65%)`;
+        }
+
+        window.ondevicemotion = (event) => {
+          z = event.accelerationIncludingGravity.z.toFixed(decPlaces);
+        };
+
+        window.ondeviceorientation = (event) => {
+          alpha = event.alpha.toFixed(decPlaces);
+          beta = event.beta.toFixed(decPlaces);
+          gamma = event.gamma.toFixed(decPlaces);
+        };
+
+        function request_permission() {
+          if (
+            DeviceMotionEvent &&
+            typeof DeviceMotionEvent.requestPermission === "function"
+          ) {
+            DeviceMotionEvent.requestPermission();
+          }
+          if (
+            DeviceOrientationEvent &&
+            typeof DeviceOrientationEvent.requestPermission === "function"
+          ) {
+            DeviceOrientationEvent.requestPermission();
+          }
+        }
+      });
+    </script>
+
     <style>
-        body {
-            font-family: sans-serif;
-            margin: 20px;
-            text-align: center;
-            background-color: #f4f4f9;
-            color: #333;
-        }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            background-color: #fff;
-        }
-        .instruction-box {
-            text-align: left;
-            margin-top: 20px;
-            padding: 15px;
-            border: 1px solid #ddd;
-            border-left: 5px solid #007bff;
-            background-color: #e9f5ff;
-            border-radius: 4px;
-        }
-        .status-connected {
-            color: green;
-            font-weight: bold;
-        }
-        .status-disconnected {
-            color: red;
-            font-weight: bold;
-        }
-        .url-box {
-            background-color: #eee;
-            padding: 5px;
-            border-radius: 3px;
-            font-family: monospace;
-            display: inline-block;
-        }
+      #connect {
+        width: 15%;
+        height: 24px;
+      }
+      #content {
+        background-color: #ccc;
+      }
+      .space {
+        height: 24px;
+      }
     </style>
-  </head>
+  </head>
 
-  <body>
-    <div class="container">
-        <h1>🎳 ボーリングゲーム開始案内</h1>
-        <div>
-          <div>あなたのID: <span id="myid"></span></div>
-          <div style="margin-top: 10px;">サーバー接続状態: <span id="connection-status" class="status-disconnected">切断中</span></div>
-          
-          <div class="instruction-box">
-              <h2>🎮 プレイ手順</h2>
-              <p>このボーリングゲームをプレイするには、**2つのデバイス**が必要です。</p>
-              
-              <h3>1. ゲーム画面（PC / タブレット）</h3>
-              <p>このデバイスのブラウザで、以下のURLを開いてゲーム画面を表示してください。ここでピンとボールが動きます。</p>
-              <p class="url-box">/bowling_game_simple.html</p>
-
-              <h3>2. コントローラー画面（スマートフォン）</h3>
-              <p>スマートフォンで以下のURLを開き、「センサー接続開始」ボタンを押してください。スマートフォンを振ることでボールを投球できます。</p>
-              <p class="url-box">/controller</p>
-
-              <p style="margin-top: 15px; font-weight: bold;">※両方の画面で、表示されている「あなたのID」が同じであることを確認してください。</p>
-          </div>
-        </div>
-    </div>
-    <script>
-      let socket = io.connect();
-      let statusSpan = document.querySelector("#connection-status");
-
-      // 共通のクライアントIDを生成・表示
-      let myid = sessionStorage.getItem('clientId');
-      if (!myid) {
-        myid = Math.random().toString(36).substring(2, 15);
-        sessionStorage.setItem('clientId', myid);
-      }
-      
-      document.querySelector("#myid").innerHTML = myid;
-      console.log("あなたのID: ", myid);
-
-      // Socket.ioの接続状態を反映
-      socket.on('connect', function() {
-          statusSpan.textContent = "接続済み";
-          statusSpan.classList.remove('status-disconnected');
-          statusSpan.classList.add('status-connected');
-      });
-      
-      socket.on('disconnect', function() {
-          statusSpan.textContent = "切断中";
-          statusSpan.classList.remove('status-connected');
-          statusSpan.classList.add('status-disconnected');
-      });
-
-    </script>
-  </body>
+  <body>
+    <center>
+      <div id="content">
+        <div class="space"></div>
+        <input id="connect" type="button" value="接続" />
+        <div>
+          <div class="space"></div>
+          <p id="contents">デバイスを傾けて下さい</p>
+        </div>
+      </div>
+      <div id="footer">
+        <h4>スマホセンサー</h4>
+      </div>
+    </center>
+  </body>
 </html>
