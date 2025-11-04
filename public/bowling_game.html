@@ -29,7 +29,29 @@
             canvas {
                 display: block;
             }
-            .score-display {
+
+            button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #61dafb;
+            color: #282c34;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+            }
+            
+            button:hover:not(:disabled) {
+                background-color: #21a1f1;
+            }
+
+            button:disabled {
+                background-color: #888;
+                cursor: not-allowed;
+            }
+
+            #score {
                 font-size: 1.5em;
                 font-weight: bold;
                 margin: 10px 0;
@@ -39,6 +61,45 @@
                 background-color: #fff;
                 color: #333;
             }
+
+            #guidance-ui {
+                width: 95vw;
+                max-width: var(--max-canvas-size); 
+                display: none;
+                justify-content: space-between;
+                align-items: center;
+                padding: 15px 0;
+                background-color: #3a3f4a;
+                border-radius: 8px;
+                margin-top: 15px;
+                text-align: center;
+            }
+            #guidance-ui.active {
+                display: flex;
+            }
+            .guidance-arrow {
+                font-size: 3rem;
+                color: #ffcc00; 
+                text-shadow: 0 0 5px #ffcc00;
+                padding: 0 20px;
+                animation: pulse 1.5s infinite;
+            }
+            .action-prompt {
+                padding: 5px 15px;
+                background-color: rgba(0, 0, 0, 0.8);
+                color: #ffffff;
+                border: 2px solid #61dafb;
+                border-radius: 8px;
+                font-size: 1.1em;
+                font-weight: bold;
+                line-height: 1.4;
+            }
+            
+            @keyframes pulse {
+                0% { opacity: 1; }
+                50% { opacity: 0.5; }
+                100% { opacity: 1; }
+            }
         </style>
     </head>
   <body>
@@ -46,7 +107,10 @@
     <h2>スマホからのセンサ情報を受信</h2>
     <div>
       <div>あなたのID: <span id="myid"></span></div>
-      <button id="connect">ルームに入る</button>
+        <div style="margin-top: 10px;">
+            <button id="connect">ルームに入って投球準備</button>
+            <button id="reset" disabled>ピンをリセット</button>
+        </div>
       <div>受信した情報はコンソールログで確認してください</div>
     </div>
     
@@ -56,21 +120,17 @@
 
     <div id="game-container"></div>
 
-    <div class="controls">
-        <button id="reset" style="padding: 10px 20px; margin-top: 10px;" disabled>ピンをリセット</button>
-        <div style="font-size: 0.9em; color: #666; margin-top: 10px;">
-            投球準備後、スマホを振る（前後、左右）ことでボールを投げられます。
+    <div id="guidance-ui">
+        <div id="left-arrow-ui" class="guidance-arrow">⇦</div>
+        <div id="prompt-ui" class="action-prompt">
+            スマホを左右に傾けて狙いを定め、<br>
+            方向が決まったら**前に振る！**
         </div>
+        <div id="right-arrow-ui" class="guidance-arrow">⇨</div>
     </div>
 
     <script>
-        //--
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-      
         let socket = io.connect();
-
-        let btn = document.querySelector("#connect");
         let g = 0;
         let b = 0;
 
@@ -78,6 +138,7 @@
         let btnReset = document.querySelector("#reset");
         let statusDiv = document.querySelector("#status");
         let scoreDiv = document.querySelector("#score");
+        let guidanceUi = document.querySelector("#guidance-ui"); 
 
         let myid = sessionStorage.getItem('clientId');
         if (!myid) {
@@ -93,9 +154,23 @@
         let score = 0;
         let pinsKnocked = 0;
 
+        // UIガイダンス表示/非表示を制御するフラグ
+        let showGuidance = false; 
+
+        function updateGuidanceUI() {
+            // CSSクラスで表示/非表示を切り替える
+            if (showGuidance) {
+                guidanceUi.classList.add('active');
+            } else {
+                guidanceUi.classList.remove('active');
+            }
+        }
+
         btnConnect.addEventListener("click", function () {
             socket.emit("join", "game");
             isReadyToThrow = true;
+            showGuidance = true; // ガイダンス表示
+            updateGuidanceUI();
             statusDiv.innerHTML = "投球準備OK！スマホを振ってください。";
             btnConnect.disabled = true;
             btnConnect.textContent = "接続済み";
@@ -113,12 +188,21 @@
 
             if (isReadyToThrow && !isThrown) {
                 const THROW_THRESHOLD = 15; // センサー値の閾値
+                
+                // 投球前は横の傾きを使ってボールの横位置を調整
+                if (window.p5Instance) {
+                    const sensitivity = 0.5;
+                    window.p5Instance.aimBall(g * sensitivity);
+                }
+
                 if (Math.abs(g) > THROW_THRESHOLD || Math.abs(b) > THROW_THRESHOLD) {
                     if (window.p5Instance) {
                         window.p5Instance.throwBall(g, b);
                     }
                     isThrown = true;
                     isReadyToThrow = false;
+                    showGuidance = false; // ガイダンス非表示
+                    updateGuidanceUI();
                     statusDiv.innerHTML = "ボールが投げられました！";
                 }
             }
@@ -139,6 +223,7 @@
         const LANE_WIDTH = 250;
         const LANE_LENGTH = 1000;
         const CANVAS_SIZE = 800;
+        const MAX_CANVAS_SIZE = 1000;
 
         // ピンの初期配置 (X座標とZ座標)
         const pinInitialOffsets = [
@@ -157,27 +242,28 @@
         // インスタンスモードを使用する（独立させる）
         const sketch = (p) => {
             p.setup = () => {
-                // 元のコードを参考に 800x800 の WEBGL モードを使用
-                p.createCanvas(CANVAS_SIZE, CANVAS_SIZE, p.WEBGL).parent('game-container');
+                const container = document.getElementById('game-container');
+                const size = Math.min(container.clientWidth, MAX_CANVAS_SIZE); 
+                const finalSize = size > 0 ? size : MAX_CANVAS_SIZE; 
+                p.createCanvas(finalSize, finalSize, p.WEBGL).parent('game-container');
                 p.angleMode(p.DEGREES); 
                 p.noStroke();
                 
-                // 元のコードのカメラ設定を参考に3Dカメラを設定
-                // camera(eyeX, eyeY, eyeZ, centerX, centerY, centerZ, upX, upY, upZ)
-                p.camera(0, 500, 300, // カメラ位置: 上から手前
-                         0, 0, 0,     // 注視点: レーンの中心
-                         0, 1, 0);    // 上方向
+                p.camera(0, 100, 600,  
+                         0, 0, 0,      
+                         0, 1, 0);     
                 
                 p.resetBallAndPins();
                 window.p5Instance = p;
             };
 
             p.draw = () => {
-                p.background(0); // 背景を黒に設定
-                p.orbitControl(); // 3D操作を有効化
-                
-                // 光源設定
-                p.ambientLight(50, 50, 50);
+                // 環境設定
+                p.background(0);
+                p.orbitControl();
+
+                // ライト設定
+                p.ambientLight(100);
                 p.directionalLight(255, 255, 255, 0, 1, -1);
                 p.pointLight(200, 200, 200, 0, 300, 300); 
                 
@@ -190,12 +276,39 @@
 
                 // ピンの描画と衝突判定
                 p.drawPins();
+
+                // 投球準備完了時のみ、3D空間に方向ガイドラインを描画
+                if (showGuidance) {
+                    p.drawForwardGuideline();
+                }
             };
             
+            p.drawForwardGuideline = () => {
+                p.push();
+                p.translate(ballX, -ballRadius, ballZ);
+                
+                // 3Dで上方向（ピン側）を示す矢印を描画
+                p.fill(0, 255, 0); // 緑色
+                p.specularMaterial(0, 255, 0);
+                p.translate(0, ballRadius + 1, -ballRadius * 2); // ボールの少し奥に配置
+                p.rotateX(90); // Y-Z平面に立つように回転
+                p.cone(5, 20); // 矢印の先端
+                
+                p.pop();
+                
+                // ボールの横位置を示すための線 (狙い線)
+                p.push();
+                p.stroke(255, 200, 0, 150); // 黄色の半透明
+                p.strokeWeight(2);
+                p.line(ballX, 0, ballZ, ballX, 0, PIN_LANE_Z); // ボールからピンエリアまで線を引く
+                p.noStroke();
+                p.pop();
+
+            }
+
             p.drawLane = () => {
                 p.push();
                 p.fill(139, 69, 19); // レーン：茶色
-                // Y=0を床面とするため、Y座標を調整 (高さ10の半分)
                 p.translate(0, 5, -LANE_LENGTH/2 + 200); 
                 p.box(LANE_WIDTH, 10, LANE_LENGTH); // 幅250, 高さ10, 奥行き1000
                 p.pop();
@@ -242,7 +355,7 @@
             };
 
             p.drawPins = () => {
-                p.fill(255); // ピン：白
+                p.fill(255); // ピン
                 pins.forEach(pin => {
                     p.push();
                     p.translate(pin.x, -PIN_HEIGHT/2, pin.z); 
@@ -266,7 +379,7 @@
                         if (dist < ballRadius + PIN_RADIUS) {
                             pin.isDown = true;
                             
-                            // 簡易的な連鎖的な倒れ方を実現するためのロジック
+                            // 簡易的な連鎖的な倒れ方
                             pinInitialOffsets.forEach((otherOffset, otherIndex) => {
                                 if (pin !== pins[otherIndex] && !pins[otherIndex].isDown) {
                                     const chainDist = p.dist(pin.x, pin.z, otherOffset.x, otherOffset.z);
@@ -310,6 +423,17 @@
                 }));
             };
 
+            p.aimBall = (lateralInput) => {
+                if (p.abs(ballVX) < 0.1 && p.abs(ballVZ) < 0.1) { // ボールが静止している時のみ
+                    const aimSpeed = 0.5;
+                    ballX += lateralInput * aimSpeed;
+                    
+                    // レーン幅内に制限
+                    let halfLaneWidth = LANE_WIDTH / 2;
+                    ballX = p.constrain(ballX, -halfLaneWidth + ballRadius, halfLaneWidth - ballRadius);
+                }
+            };
+
             p.throwBall = (g, b) => {
                 const MAX_SPEED = 20; 
                 const MIN_SPEED = 5;  
@@ -318,18 +442,17 @@
                 let forwardVelocity = p.constrain(p.abs(b) * THROW_FACTOR, MIN_SPEED, MAX_SPEED);
                 ballVZ = -forwardVelocity; 
                 
-                let lateralVelocity = p.constrain(g * THROW_FACTOR * 0.5, -MAX_SPEED / 2, MAX_SPEED / 2);
-                ballVX = lateralVelocity;
+                ballVX = 0;
 
                 isThrown = true;
                 btnReset.disabled = false;
-                
-                console.log(`Throwing Ball: VX=${ballVX.toFixed(2)}, VZ=${ballVZ.toFixed(2)}`);
             };
 
             p.windowResized = () => {
                 const container = document.getElementById('game-container');
                 // 画面サイズは元のコードに合わせて固定
+                const size = Math.min(container.clientWidth, MAX_CANVAS_SIZE);
+                p.resizeCanvas(size, size); 
             };
         };
 
@@ -343,7 +466,11 @@
                 window.p5Instance.resetBallAndPins();
             }
             isThrown = false;
-            statusDiv.innerHTML = isReadyToThrow ? "投球準備OK！スマホを振ってください。" : "接続待ち...";
+            isReadyToThrow = true; // リセット後は投球準備状態に戻す
+            showGuidance = true; // ガイダンス再表示
+            updateGuidanceUI();
+            statusDiv.innerHTML = "投球準備OK！スマホを振ってください。";
+            btnReset.disabled = true; 
         }
     </script>
   </body>
