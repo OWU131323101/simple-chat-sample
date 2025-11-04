@@ -8,49 +8,55 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.1.9/p5.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.1.3/socket.io.js"></script>
         <style>
-            <!--style->
             body {
                 font-family: sans-serif;
-                margin: 20px;
+                margin: 10px;
                 text-align: center;
                 background-color: #f0f0f0;
             }
             h1 {
                 color: #333;
+                margin-bottom: 5px;
+            }
+            
+            /*p5.jsのキャンバス範囲*/
+            #canvas-wrapper {
+                position: relative;
+                margin: 5px auto;
+                width: 600px;
+                height: 250px;
             }
             #game-container {
-                margin: 20px auto;
-                /* 元のコードの800x800に準拠 */
-                width: 800px;
-                height: 800px; 
+                width: 100%;
+                height: 100%;
                 border: 2px solid #666;
-                background-color: #000; /* 3D背景は黒 */
+                background-color: #000;
             }
             canvas {
                 display: block;
             }
 
+            /* ボタン関連のCSS */
             button {
-            padding: 10px 20px;
-            margin: 5px;
-            font-size: 16px;
-            cursor: pointer;
-            background-color: #61dafb;
-            color: #282c34;
-            border: none;
-            border-radius: 5px;
-            transition: background-color 0.3s;
+                padding: 10px 20px;
+                margin: 5px;
+                font-size: 16px;
+                cursor: pointer;
+                background-color: #61dafb;
+                color: #282c34;
+                border: none;
+                border-radius: 5px;
+                transition: background-color 0.3s;
             }
-            
             button:hover:not(:disabled) {
                 background-color: #21a1f1;
             }
-
             button:disabled {
                 background-color: #888;
                 cursor: not-allowed;
             }
 
+            /* スコア関連のCSS */
             #score {
                 font-size: 1.5em;
                 font-weight: bold;
@@ -62,416 +68,398 @@
                 color: #333;
             }
 
+            /* 矢印UI (キャンバスの下に配置) */
             #guidance-ui {
-                width: 95vw;
-                max-width: var(--max-canvas-size); 
+                width: 600px;
+                margin: 10px auto 0;
                 display: none;
                 justify-content: space-between;
+                background-color:#f0f0f0;
                 align-items: center;
-                padding: 15px 0;
-                background-color: #3a3f4a;
+                padding: 5px 0;
                 border-radius: 8px;
-                margin-top: 15px;
                 text-align: center;
             }
             #guidance-ui.active {
                 display: flex;
             }
             .guidance-arrow {
-                font-size: 3rem;
-                color: #ffcc00; 
-                text-shadow: 0 0 5px #ffcc00;
-                padding: 0 20px;
+                font-size: 4rem;
+                padding: 0 30px;
                 animation: pulse 1.5s infinite;
+                font-weight: bolder;
             }
-            .action-prompt {
-                padding: 5px 15px;
-                background-color: rgba(0, 0, 0, 0.8);
-                color: #ffffff;
-                border: 2px solid #61dafb;
-                border-radius: 8px;
-                font-size: 1.1em;
-                font-weight: bold;
-                line-height: 1.4;
+            /* 矢印の色指定 */
+            #left-arrow-ui, #right-arrow-ui {
+                color: #ffc300; /* 黄色 */
+                text-shadow: 0 0 10px #ffc300;
             }
-            
-            @keyframes pulse {
-                0% { opacity: 1; }
-                50% { opacity: 0.5; }
-                100% { opacity: 1; }
+            #up-arrow-ui {
+                color: #00ff00; /* 緑 */
+                text-shadow: 0 0 10px #00ff00;
             }
         </style>
     </head>
-  <body>
-    <h1>3Dボーリングゲーム</h1>
-    <h2>スマホからのセンサ情報を受信</h2>
-    <div>
-      <div>あなたのID: <span id="myid"></span></div>
-        <div style="margin-top: 10px;">
-            <button id="connect">ルームに入って投球準備</button>
-            <button id="reset" disabled>ピンをリセット</button>
+
+    <body>
+        <h1>3Dボーリングゲーム</h1>
+        <div>
+        <div>あなたのID: <span id="myid"></span></div>
+            <div>
+                <button id="connect">ルームに入って投球準備</button>
+                <button id="reset" disabled>ピンをリセット</button>
+            </div>
+        <div id="status">スマホからのセンサ接続待機中...</div>
         </div>
-      <div>受信した情報はコンソールログで確認してください</div>
-    </div>
-    
-    <div class="score-display">
-        倒したピン数 / スコア: <span id="score">0 / 0</span>
-    </div>
-
-    <div id="game-container"></div>
-
-    <div id="guidance-ui">
-        <div id="left-arrow-ui" class="guidance-arrow">⇦</div>
-        <div id="prompt-ui" class="action-prompt">
-            スマホを左右に傾けて狙いを定め、<br>
-            方向が決まったら**前に振る！**
+        
+        <div class="score-display">
+            倒したピン数 / スコア: <span id="score">0 / 0</span>
         </div>
-        <div id="right-arrow-ui" class="guidance-arrow">⇨</div>
-    </div>
 
-    <script>
-        let socket = io.connect();
-        let g = 0;
-        let b = 0;
+        <div id="canvas-wrapper">
+            <div id="game-container"></div>
+        </div>
+        
+        <div id="guidance-ui">
+            <div id="left-arrow-ui" class="guidance-arrow">⇦</div>
+            <div id="up-arrow-ui" class="guidance-arrow">⇧</div>
+            <div id="right-arrow-ui" class="guidance-arrow">➡</div>
+        </div>
 
-        let btnConnect = document.querySelector("#connect");
-        let btnReset = document.querySelector("#reset");
-        let statusDiv = document.querySelector("#status");
-        let scoreDiv = document.querySelector("#score");
-        let guidanceUi = document.querySelector("#guidance-ui"); 
+        <script>
+            let socket = io.connect();
+            let g = 0;
+            let b = 0;
 
-        let myid = sessionStorage.getItem('clientId');
-        if (!myid) {
-            myid = Math.random().toString(36).substring(2, 15);
-            sessionStorage.setItem('clientId', myid);
-        }
-      
-        document.querySelector("#myid").innerHTML = myid;
-        console.log("あなたのID: ", myid);
+            let btnConnect = document.querySelector("#connect");
+            let btnReset = document.querySelector("#reset");
+            let statusDiv = document.querySelector("#status");
+            let scoreDiv = document.querySelector("#score");
+            let guidanceUi = document.querySelector("#guidance-ui");
 
-        let isReadyToThrow = false;
-        let isThrown = false;
-        let score = 0;
-        let pinsKnocked = 0;
-
-        // UIガイダンス表示/非表示を制御するフラグ
-        let showGuidance = false; 
-
-        function updateGuidanceUI() {
-            // CSSクラスで表示/非表示を切り替える
-            if (showGuidance) {
-                guidanceUi.classList.add('active');
-            } else {
-                guidanceUi.classList.remove('active');
+            let myid = sessionStorage.getItem('clientId');
+            if (!myid) {
+                myid = Math.random().toString(36).substring(2, 15);
+                sessionStorage.setItem('clientId', myid);
             }
-        }
+        
+            document.querySelector("#myid").innerHTML = myid;
+            console.log("あなたのID: ", myid);
 
-        btnConnect.addEventListener("click", function () {
-            socket.emit("join", "game");
-            isReadyToThrow = true;
-            showGuidance = true; // ガイダンス表示
-            updateGuidanceUI();
-            statusDiv.innerHTML = "投球準備OK！スマホを振ってください。";
-            btnConnect.disabled = true;
-            btnConnect.textContent = "接続済み";
-            if (window.p5Instance) {
-                window.p5Instance.resetBallAndPins();
+            let isReadyToThrow = false;
+            let isThrown = false;
+            let score = 0;
+            let pinsKnocked = 0;
+
+            // UIガイダンス表示/非表示を制御するフラグ
+            let showGuidance = false;
+
+            function updateGuidanceUI() {
+                if (showGuidance) {
+                    guidanceUi.classList.add('active'); // 矢印(キャンバスの下)
+                } else {
+                    guidanceUi.classList.remove('active');
+                }
             }
-        });
 
-        btnReset.addEventListener("click", resetGame);
-
-        socket.on("sensor", function (data) {
-            g = parseFloat(data.g); 
-            b = parseFloat(data.b); 
-            console.log("Sensor Data (g, b):", g, b);
-
-            if (isReadyToThrow && !isThrown) {
-                const THROW_THRESHOLD = 15; // センサー値の閾値
-                
-                // 投球前は横の傾きを使ってボールの横位置を調整
+            btnConnect.addEventListener("click", function () {
+                socket.emit("join", "game");
+                isReadyToThrow = true;
+                showGuidance = true;
+                updateGuidanceUI();
+                statusDiv.innerHTML = "投球準備OK！スマホを振ってください。";
+                btnConnect.disabled = true;
+                btnConnect.textContent = "接続済み";
                 if (window.p5Instance) {
-                    const sensitivity = 0.5;
-                    window.p5Instance.aimBall(g * sensitivity);
+                    window.p5Instance.resetBallAndPins();
                 }
+            });
 
-                if (Math.abs(g) > THROW_THRESHOLD || Math.abs(b) > THROW_THRESHOLD) {
+            btnReset.addEventListener("click", resetGame);
+
+            socket.on("sensor", function (data) {
+                g = parseFloat(data.g);
+                b = parseFloat(data.b);
+
+                if (isReadyToThrow && !isThrown) {
+                    const THROW_THRESHOLD = 15;
+                    
                     if (window.p5Instance) {
-                        window.p5Instance.throwBall(g, b);
+                        const sensitivity = 0.5;
+                        window.p5Instance.aimBall(g * sensitivity);
                     }
-                    isThrown = true;
-                    isReadyToThrow = false;
-                    showGuidance = false; // ガイダンス非表示
-                    updateGuidanceUI();
-                    statusDiv.innerHTML = "ボールが投げられました！";
+
+                    if (Math.abs(g) > THROW_THRESHOLD || Math.abs(b) > THROW_THRESHOLD) {
+                        if (window.p5Instance) {
+                            window.p5Instance.throwBall(g, b);
+                        }
+                        isThrown = true;
+                        isReadyToThrow = false;
+                        showGuidance = false;
+                        updateGuidanceUI();
+                        statusDiv.innerHTML = "ボールが投げられました！";
+                    }
                 }
-            }
-        });
+            });
 
-        // p5.jsGameLogic
-        let ballX;
-        let ballZ; 
-        let ballRadius = 20;
-        let ballVX = 0; 
-        let ballVZ = 0; 
-        let friction = 0.99; 
+            // p5.jsGameLogic
+            let ballX;
+            let ballZ;
+            let ballRadius = 20;
+            let ballVX = 0;
+            let ballVZ = 0;
+            let friction = 0.99;
 
-        let pins = [];
-        const PIN_RADIUS = 10;
-        const PIN_HEIGHT = 50; 
-        const PIN_LANE_Z = -300; 
-        const LANE_WIDTH = 250;
-        const LANE_LENGTH = 1000;
-        const CANVAS_SIZE = 800;
-        const MAX_CANVAS_SIZE = 1000;
+            let pins = [];
+            const PIN_RADIUS = 10;
+            const PIN_HEIGHT = 50;
+            const PIN_LANE_Z = -300;
+            const LANE_WIDTH = 250;
+            const LANE_LENGTH = 1000;
+            const MAX_CANVAS_SIZE = 1000;
 
-        // ピンの初期配置 (X座標とZ座標)
-        const pinInitialOffsets = [
-            { x: 0, z: PIN_LANE_Z },
-            { x: -PIN_RADIUS * 2, z: PIN_LANE_Z - PIN_RADIUS * 3 },
-            { x: PIN_RADIUS * 2, z: PIN_LANE_Z - PIN_RADIUS * 3 },
-            { x: -PIN_RADIUS * 4, z: PIN_LANE_Z - PIN_RADIUS * 6 },
-            { x: 0, z: PIN_LANE_Z - PIN_RADIUS * 6 },
-            { x: PIN_RADIUS * 4, z: PIN_LANE_Z - PIN_RADIUS * 6 },
-            { x: -PIN_RADIUS * 6, z: PIN_LANE_Z - PIN_RADIUS * 9 },
-            { x: -PIN_RADIUS * 2, z: PIN_LANE_Z - PIN_RADIUS * 9 },
-            { x: PIN_RADIUS * 2, z: PIN_LANE_Z - PIN_RADIUS * 9 },
-            { x: PIN_RADIUS * 6, z: PIN_LANE_Z - PIN_RADIUS * 9 },
-        ];
+            // ピンの初期配置 (X座標とZ座標)
+            const pinInitialOffsets = [
+                { x: 0, z: PIN_LANE_Z },
+                { x: -PIN_RADIUS * 2, z: PIN_LANE_Z - PIN_RADIUS * 3 },
+                { x: PIN_RADIUS * 2, z: PIN_LANE_Z - PIN_RADIUS * 3 },
+                { x: -PIN_RADIUS * 4, z: PIN_LANE_Z - PIN_RADIUS * 6 },
+                { x: 0, z: PIN_LANE_Z - PIN_RADIUS * 6 },
+                { x: PIN_RADIUS * 4, z: PIN_LANE_Z - PIN_RADIUS * 6 },
+                { x: -PIN_RADIUS * 6, z: PIN_LANE_Z - PIN_RADIUS * 9 },
+                { x: -PIN_RADIUS * 2, z: PIN_LANE_Z - PIN_RADIUS * 9 },
+                { x: PIN_RADIUS * 2, z: PIN_LANE_Z - PIN_RADIUS * 9 },
+                { x: PIN_RADIUS * 6, z: PIN_LANE_Z - PIN_RADIUS * 9 },
+            ];
 
-        // インスタンスモードを使用する（独立させる）
-        const sketch = (p) => {
-            p.setup = () => {
-                const container = document.getElementById('game-container');
-                const size = Math.min(container.clientWidth, MAX_CANVAS_SIZE); 
-                const finalSize = size > 0 ? size : MAX_CANVAS_SIZE; 
-                p.createCanvas(finalSize, finalSize, p.WEBGL).parent('game-container');
-                p.angleMode(p.DEGREES); 
-                p.noStroke();
+            // インスタンスモードを使用する（独立させる）
+            const sketch = (p) => {
+                p.setup = () => {
+                    const container = document.getElementById('game-container');
+                    const w = container.clientWidth;
+                    const h = container.clientHeight;
+
+                    // コンテナの幅wと高さhを使ってキャンバスを作成する
+                    p.createCanvas(w, h, p.WEBGL).parent('game-container');
+                    p.angleMode(p.DEGREES);
+                    p.noStroke();
+                    
+                    // 初期カメラ位置
+                    p.camera(0, -80, 400, 
+                            0, 0, 0,    
+                            0, 1, 0);      
+                    
+                    p.resetBallAndPins();
+                    window.p5Instance = p;
+                };
+
+                p.draw = () => {
+                    // 環境設定
+                    p.background(0);
+                    p.orbitControl();
+
+                    // ライト設定
+                    p.ambientLight(100);
+                    p.directionalLight(255, 255, 255, 0, 1, -1);
+                    p.pointLight(200, 200, 200, 0, 300, 300);
+                    
+                    // レーンの描画
+                    p.drawLane();
+
+                    // ボールの更新と描画
+                    p.updateBall();
+                    p.drawBall();
+
+                    // ピンの描画と衝突判定
+                    p.drawPins();
+
+                    // 投球準備完了時のみ、3D空間に方向ガイドラインを描画
+                    if (showGuidance) {
+                        p.drawForwardGuideline();
+                    }
+                };
                 
-                p.camera(0, 100, 600,  
-                         0, 0, 0,      
-                         0, 1, 0);     
+                p.drawForwardGuideline = () => {
+                    // ボールの横位置を示すための線
+                    p.push();
+                    p.stroke(255, 200, 0, 150);
+                    p.strokeWeight(2);
+                    p.line(ballX, 0, ballZ, ballX, 0, PIN_LANE_Z); // ボールからピンエリアまで線を引く
+                    p.noStroke();
+                    p.pop();
+                }
+
+                p.drawLane = () => {
+                    p.push();
+                    p.fill(139, 69, 19); // レーン：茶色
+                    p.translate(0, 5, -LANE_LENGTH/2 + 200);
+                    p.box(LANE_WIDTH, 10, LANE_LENGTH);
+                    p.pop();
+                }
                 
-                p.resetBallAndPins();
-                window.p5Instance = p;
-            };
+                // ボールを更新
+                p.updateBall = () => {
+                    if (isThrown) {
+                        ballX += ballVX;
+                        ballZ += ballVZ;
 
-            p.draw = () => {
-                // 環境設定
-                p.background(0);
-                p.orbitControl();
+                        ballVX *= friction;
+                        ballVZ *= friction;
 
-                // ライト設定
-                p.ambientLight(100);
-                p.directionalLight(255, 255, 255, 0, 1, -1);
-                p.pointLight(200, 200, 200, 0, 300, 300); 
-                
-                // レーンの描画
-                p.drawLane();
+                        let halfLaneWidth = LANE_WIDTH / 2;
+                        if (ballX < -halfLaneWidth + ballRadius || ballX > halfLaneWidth - ballRadius) {
+                            ballVX *= -0.8;
+                            ballX = p.constrain(ballX, -halfLaneWidth + ballRadius, halfLaneWidth - ballRadius);
+                        }
+                        
+                        if (ballZ < -LANE_LENGTH / 2) {
+                            ballVZ = 0;
+                        }
 
-                // ボールの更新と描画
-                p.updateBall();
-                p.drawBall();
+                        if (p.abs(ballVX) < 0.1 && p.abs(ballVZ) < 0.1) {
+                            if (isThrown) {
+                                p.checkScore();
+                                isThrown = false;
+                                statusDiv.innerHTML = "投球終了。スコアを確認し、リセットしてください。";
+                                btnReset.disabled = false;
+                            }
+                        }
+
+                        if (ballZ < PIN_LANE_Z + 100) {
+                            p.handleCollision();
+                        }
+                    }
+                };
+
+                // ボールを描画する
+                p.drawBall = () => {
+                    p.push();
+                    p.specularMaterial(223, 41, 53); // ボール：赤
+                    p.translate(ballX, -ballRadius, ballZ);
+                    p.sphere(ballRadius);
+                    p.pop();
+                };
 
                 // ピンの描画と衝突判定
-                p.drawPins();
+                p.drawPins = () => {
+                    p.fill(255);
+                    pins.forEach(pin => {
+                        p.push();
+                        p.translate(pin.x, -PIN_HEIGHT/2, pin.z);
+                        
+                        if (!pin.isDown) {
+                            p.cylinder(PIN_RADIUS, PIN_HEIGHT);
+                        } else {
+                            p.fill(170); // 倒れたピンは灰色
+                            p.rotateX(90);
+                            p.cylinder(PIN_RADIUS, PIN_HEIGHT);
+                        }
+                        p.pop();
+                    });
+                };
 
-                // 投球準備完了時のみ、3D空間に方向ガイドラインを描画
-                if (showGuidance) {
-                    p.drawForwardGuideline();
-                }
-            };
-            
-            p.drawForwardGuideline = () => {
-                p.push();
-                p.translate(ballX, -ballRadius, ballZ);
+                // ボールとピンの衝突判定
+                p.handleCollision = () => {
+                    pins.forEach(pin => {
+                        if (!pin.isDown) {
+                            const dist = p.dist(ballX, ballZ, pin.x, pin.z);
+                            
+                            if (dist < ballRadius + PIN_RADIUS) {
+                                pin.isDown = true;
+                                
+                                pinInitialOffsets.forEach((otherOffset, otherIndex) => {
+                                    if (pin !== pins[otherIndex] && !pins[otherIndex].isDown) {
+                                        const chainDist = p.dist(pin.x, pin.z, otherOffset.x, otherOffset.z);
+                                        if (chainDist < PIN_RADIUS * 4 && p.random(1) < 0.5) {
+                                                pins[otherIndex].isDown = true;
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    });
+                };
                 
-                // 3Dで上方向（ピン側）を示す矢印を描画
-                p.fill(0, 255, 0); // 緑色
-                p.specularMaterial(0, 255, 0);
-                p.translate(0, ballRadius + 1, -ballRadius * 2); // ボールの少し奥に配置
-                p.rotateX(90); // Y-Z平面に立つように回転
-                p.cone(5, 20); // 矢印の先端
+                // スコアの更新
+                p.checkScore = () => {
+                    let currentKnocked = 0;
+                    pins.forEach(pin => {
+                        if (pin.isDown && !pin.counted) {
+                            pin.counted = true;
+                            currentKnocked++;
+                        }
+                    });
+
+                    if (currentKnocked > 0) {
+                        pinsKnocked += currentKnocked;
+                        score += currentKnocked;
+                        scoreDiv.innerHTML = `${pinsKnocked} / ${score}`;
+                    }
+                };
                 
-                p.pop();
-                
-                // ボールの横位置を示すための線 (狙い線)
-                p.push();
-                p.stroke(255, 200, 0, 150); // 黄色の半透明
-                p.strokeWeight(2);
-                p.line(ballX, 0, ballZ, ballX, 0, PIN_LANE_Z); // ボールからピンエリアまで線を引く
-                p.noStroke();
-                p.pop();
+                // ボールとピンをリセット
+                p.resetBallAndPins = () => {
+                    ballX = 0;
+                    ballZ = 300;
+                    ballVX = 0;
+                    ballVZ = 0;
+                    
+                    pins = pinInitialOffsets.map(offset => ({
+                        x: offset.x,
+                        z: offset.z,
+                        isDown: false,
+                        counted: false,
+                    }));
+                };
 
-            }
-
-            p.drawLane = () => {
-                p.push();
-                p.fill(139, 69, 19); // レーン：茶色
-                p.translate(0, 5, -LANE_LENGTH/2 + 200); 
-                p.box(LANE_WIDTH, 10, LANE_LENGTH); // 幅250, 高さ10, 奥行き1000
-                p.pop();
-            }
-            
-            p.updateBall = () => {
-                if (isThrown) {
-                    ballX += ballVX;
-                    ballZ += ballVZ;
-
-                    ballVX *= friction;
-                    ballVZ *= friction;
-
-                    let halfLaneWidth = LANE_WIDTH / 2;
-                    if (ballX < -halfLaneWidth + ballRadius || ballX > halfLaneWidth - ballRadius) {
-                        ballVX *= -0.8; 
+                // ボールを投げる方向を決定
+                p.aimBall = (lateralInput) => {
+                    if (!isThrown && p.abs(ballVX) < 0.1 && p.abs(ballVZ) < 0.1) {
+                        const aimSpeed = 0.5;
+                        ballX += lateralInput * aimSpeed;
+                        
+                        let halfLaneWidth = LANE_WIDTH / 2;
                         ballX = p.constrain(ballX, -halfLaneWidth + ballRadius, halfLaneWidth - ballRadius);
                     }
+                };
+
+                // ボールを投げたら
+                p.throwBall = (g, b) => {
+                    const MAX_SPEED = 20;
+                    const MIN_SPEED = 5;    
+                    const THROW_FACTOR = 0.5;
+
+                    let forwardVelocity = p.constrain(p.abs(b) * THROW_FACTOR, MIN_SPEED, MAX_SPEED);
+                    ballVZ = -forwardVelocity;
                     
-                    if (ballZ < -LANE_LENGTH / 2) {
-                        ballVZ = 0;
-                    }
+                    ballVX = 0;
 
-                    if (p.abs(ballVX) < 0.1 && p.abs(ballVZ) < 0.1) {
-                        if (isThrown) {
-                            p.checkScore();
-                            isThrown = false;
-                            statusDiv.innerHTML = "投球終了。スコアを確認し、リセットしてください。";
-                        }
-                    }
+                    isThrown = true;
+                    btnReset.disabled = false;
+                };
 
-                    if (ballZ < PIN_LANE_Z + 100) { 
-                        p.handleCollision();
-                    }
+                p.windowResized = () => {
+                    const container = document.getElementById('game-container');
+                    p.resizeCanvas(container.clientWidth, container.clientHeight);
+                };
+            };
+
+            new p5(sketch, 'game-container');
+
+            // ゲームのリセット
+            function resetGame() {
+                pinsKnocked = 0;
+                scoreDiv.innerHTML = `${pinsKnocked} / ${score}`;
+                if (window.p5Instance) {
+                    window.p5Instance.resetBallAndPins();
                 }
-            };
-
-            p.drawBall = () => {
-                p.push();
-                p.specularMaterial(223, 41, 53); // ボール：赤
-                p.translate(ballX, -ballRadius, ballZ); 
-                p.sphere(ballRadius);
-                p.pop();
-            };
-
-            p.drawPins = () => {
-                p.fill(255); // ピン
-                pins.forEach(pin => {
-                    p.push();
-                    p.translate(pin.x, -PIN_HEIGHT/2, pin.z); 
-                    
-                    if (!pin.isDown) {
-                        p.cylinder(PIN_RADIUS, PIN_HEIGHT); 
-                    } else {
-                        p.fill(170); // 倒れたピンは灰色
-                        p.rotateX(90); 
-                        p.cylinder(PIN_RADIUS, PIN_HEIGHT); 
-                    }
-                    p.pop();
-                });
-            };
-
-            p.handleCollision = () => {
-                pins.forEach(pin => {
-                    if (!pin.isDown) {
-                        const dist = p.dist(ballX, ballZ, pin.x, pin.z);
-                        
-                        if (dist < ballRadius + PIN_RADIUS) {
-                            pin.isDown = true;
-                            
-                            // 簡易的な連鎖的な倒れ方
-                            pinInitialOffsets.forEach((otherOffset, otherIndex) => {
-                                if (pin !== pins[otherIndex] && !pins[otherIndex].isDown) {
-                                    const chainDist = p.dist(pin.x, pin.z, otherOffset.x, otherOffset.z);
-                                    if (chainDist < PIN_RADIUS * 4 && p.random(1) < 0.5) { 
-                                         pins[otherIndex].isDown = true;
-                                    }
-                                }
-                            });
-                        }
-                    }
-                });
-            };
-            
-            p.checkScore = () => {
-                let currentKnocked = 0;
-                pins.forEach(pin => {
-                    if (pin.isDown && !pin.counted) {
-                        pin.counted = true;
-                        currentKnocked++;
-                    }
-                });
-
-                if (currentKnocked > 0) {
-                    pinsKnocked += currentKnocked;
-                    score += currentKnocked;
-                    scoreDiv.innerHTML = `${pinsKnocked} / ${score}`;
-                }
-            };
-            
-            p.resetBallAndPins = () => {
-                ballX = 0;
-                ballZ = 300; 
-                ballVX = 0;
-                ballVZ = 0;
-                
-                pins = pinInitialOffsets.map(offset => ({
-                    x: offset.x,
-                    z: offset.z, 
-                    isDown: false,
-                    counted: false,
-                }));
-            };
-
-            p.aimBall = (lateralInput) => {
-                if (p.abs(ballVX) < 0.1 && p.abs(ballVZ) < 0.1) { // ボールが静止している時のみ
-                    const aimSpeed = 0.5;
-                    ballX += lateralInput * aimSpeed;
-                    
-                    // レーン幅内に制限
-                    let halfLaneWidth = LANE_WIDTH / 2;
-                    ballX = p.constrain(ballX, -halfLaneWidth + ballRadius, halfLaneWidth - ballRadius);
-                }
-            };
-
-            p.throwBall = (g, b) => {
-                const MAX_SPEED = 20; 
-                const MIN_SPEED = 5;  
-                const THROW_FACTOR = 0.5; 
-
-                let forwardVelocity = p.constrain(p.abs(b) * THROW_FACTOR, MIN_SPEED, MAX_SPEED);
-                ballVZ = -forwardVelocity; 
-                
-                ballVX = 0;
-
-                isThrown = true;
-                btnReset.disabled = false;
-            };
-
-            p.windowResized = () => {
-                const container = document.getElementById('game-container');
-                // 画面サイズは元のコードに合わせて固定
-                const size = Math.min(container.clientWidth, MAX_CANVAS_SIZE);
-                p.resizeCanvas(size, size); 
-            };
-        };
-
-        new p5(sketch, 'game-container');
-
-        // --- ゲームのリセット (HTMLボタン用) ---
-        function resetGame() {
-            pinsKnocked = 0;
-            scoreDiv.innerHTML = `${pinsKnocked} / ${score}`;
-            if (window.p5Instance) {
-                window.p5Instance.resetBallAndPins();
+                isThrown = false;
+                isReadyToThrow = true; // リセット後は投球準備状態に戻す
+                showGuidance = true; // 矢印UI再表示
+                updateGuidanceUI();
+                statusDiv.innerHTML = "投球準備OK！絵の指示に従ってスマホを操作してください。";
+                btnReset.disabled = true;
             }
-            isThrown = false;
-            isReadyToThrow = true; // リセット後は投球準備状態に戻す
-            showGuidance = true; // ガイダンス再表示
-            updateGuidanceUI();
-            statusDiv.innerHTML = "投球準備OK！スマホを振ってください。";
-            btnReset.disabled = true; 
-        }
-    </script>
-  </body>
+        </script>
+    </body>
 </html>
