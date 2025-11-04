@@ -56,12 +56,17 @@
                 cursor: not-allowed;
             }
 
+            /* 文字の色 */
+            #status {
+                color:#21a1f1;
+            }
+
             /* スコア関連のCSS */
             #score {
                 font-size: 1.5em;
                 font-weight: bold;
                 margin: 10px 0;
-                padding: 5px 15px;
+                padding: 3px 15px;
                 border: 1px solid #333;
                 display: inline-block;
                 background-color: #fff;
@@ -74,7 +79,7 @@
                 margin: 10px auto 0;
                 display: none;
                 justify-content: space-between;
-                background-color:#f0f0f0;
+                background-color:#888;
                 align-items: center;
                 padding: 5px 0;
                 border-radius: 8px;
@@ -109,11 +114,11 @@
                 <button id="connect">ルームに入って投球準備</button>
                 <button id="reset" disabled>ピンをリセット</button>
             </div>
-        <div id="status">スマホからのセンサ接続待機中...</div>
+        <div id="status">スマホからのセンサ接続待機中... / スマホを水平な場所に置いてください</div>
         </div>
         
         <div class="score-display">
-            倒したピン数 / スコア: <span id="score">0 / 0</span>
+            ピン数: 10 ・ 倒したピン / 総合スコア: <span id="score">0 / 0</span>
         </div>
 
         <div id="canvas-wrapper">
@@ -167,7 +172,7 @@
                 isReadyToThrow = true;
                 showGuidance = true;
                 updateGuidanceUI();
-                statusDiv.innerHTML = "投球準備OK！スマホを振ってください。";
+                statusDiv.innerHTML = "投球準備OK！スマホの画面に従って操作してください。";
                 btnConnect.disabled = true;
                 btnConnect.textContent = "接続済み";
                 if (window.p5Instance) {
@@ -425,8 +430,8 @@
 
                 // ボールを投げたら
                 p.throwBall = (g, b) => {
-                    const MAX_SPEED = 20;
-                    const MIN_SPEED = 5;    
+                    const MAX_SPEED = 25;
+                    const MIN_SPEED = 10;    
                     const THROW_FACTOR = 0.5;
 
                     let forwardVelocity = p.constrain(p.abs(b) * THROW_FACTOR, MIN_SPEED, MAX_SPEED);
@@ -457,7 +462,7 @@
                 isReadyToThrow = true; // リセット後は投球準備状態に戻す
                 showGuidance = true; // 矢印UI再表示
                 updateGuidanceUI();
-                statusDiv.innerHTML = "投球準備OK！絵の指示に従ってスマホを操作してください。";
+                statusDiv.innerHTML = "投球準備OK！スマホの画面に従って操作してください。";
                 btnReset.disabled = true;
             }
         </script>
